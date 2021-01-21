@@ -202,7 +202,7 @@ class VRPDataset(Dataset):
                     self.data.append({                    
                     'loc':  - self.data[i - num_samples // 2]['loc'],
                     # Uniform 1 - 9, scaled by capacities
-                    'demand': (torch.FloatTensor(size).uniform_(0, 9).int() + 1).float() / CAPACITIES[size],
+                    'demand': self.data[i - num_samples // 2]['demand'],
                     'depot': - self.data[i - num_samples // 2]['depot']
                      })
 
