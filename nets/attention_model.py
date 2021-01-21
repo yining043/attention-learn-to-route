@@ -134,7 +134,16 @@ class AttentionModel(nn.Module):
             embeddings, _ = checkpoint(self.embedder, self._init_embed(input))
         else:
             embeddings, _ = self.embedder(self._init_embed(input))
-
+        
+        ################### from yining
+        if self.training:
+            batch_size, graph_size, embed_size = embeddings.size()
+            self_contra_loss = torch.matmul(embeddings[:batch_size // 2].view(batch_size // 2, graph_size, 1, embed_size).mean(-3),
+                                            embeddings[batch_size // 2:].view(batch_size // 2, graph_size, embed_size, 1).mean(-3)).mean()
+        else:
+            self_contra_loss = None
+        ###################
+            
         _log_p, pi = self._inner(input, embeddings)
 
         cost, mask = self.problem.get_costs(input, pi)
@@ -144,7 +153,7 @@ class AttentionModel(nn.Module):
         if return_pi:
             return cost, ll, pi
 
-        return cost, ll
+        return cost, ll, self_contra_loss
 
     def beam_search(self, *args, **kwargs):
         return self.problem.beam_search(*args, **kwargs, model=self)
