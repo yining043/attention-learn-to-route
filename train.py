@@ -147,6 +147,7 @@ def train_batch(
 
     # Calculate loss
     reinforce_loss = ((cost - bl_val) * log_likelihood).mean()
+    self_contra_loss = self_contra_loss * opts.self_weights
     loss = reinforce_loss + bl_loss + self_contra_loss
 
     # Perform backward pass and optimization step
