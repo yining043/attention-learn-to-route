@@ -139,7 +139,7 @@ class AttentionModel(nn.Module):
         
                 ################### from yining
         if self.training:
-            batch_size, _, embed_size = graph_embeddings.size()
+            batch_size, embed_size = graph_embeddings.size()
             self_contra_loss = torch.matmul(graph_embeddings[:batch_size // 2].view(batch_size // 2, 1, embed_size),
                                             graph_embeddings[batch_size // 2:].view(batch_size // 2, embed_size, 1)).mean()
         else:
