@@ -134,17 +134,17 @@ class AttentionModel(nn.Module):
             embeddings, _ = checkpoint(self.embedder, self._init_embed(input))
         else:
             embeddings, _ = self.embedder(self._init_embed(input))
+            
+        _log_p, pi, graph_embeddings = self._inner(input, embeddings)
         
-        ################### from yining
+                ################### from yining
         if self.training:
-            batch_size, graph_size, embed_size = embeddings.size()
-            self_contra_loss = torch.matmul(embeddings[:batch_size // 2].view(batch_size // 2, graph_size, 1, embed_size).mean(-3),
-                                            embeddings[batch_size // 2:].view(batch_size // 2, graph_size, embed_size, 1).mean(-3)).mean()
+            batch_size, _, embed_size = graph_embeddings.size()
+            self_contra_loss = torch.matmul(graph_embeddings[:batch_size // 2].view(batch_size // 2, 1, embed_size),
+                                            graph_embeddings[batch_size // 2:].view(batch_size // 2, embed_size, 1)).mean()
         else:
             self_contra_loss = None
         ###################
-            
-        _log_p, pi = self._inner(input, embeddings)
 
         cost, mask = self.problem.get_costs(input, pi)
         # Log likelyhood is calculated within the model since returning it per action does not work well with
@@ -239,7 +239,7 @@ class AttentionModel(nn.Module):
         state = self.problem.make_state(input)
 
         # Compute keys, values for the glimpse and keys for the logits once as they can be reused in every step
-        fixed = self._precompute(embeddings)
+        fixed, graph_embeddings = self._precompute(embeddings)
 
         batch_size = state.ids.size(0)
 
@@ -282,7 +282,7 @@ class AttentionModel(nn.Module):
             i += 1
 
         # Collected lists, return Tensor
-        return torch.stack(outputs, 1), torch.stack(sequences, 1)
+        return torch.stack(outputs, 1), torch.stack(sequences, 1), graph_embeddings
 
     def sample_many(self, input, batch_rep=1, iter_rep=1):
         """
@@ -337,7 +337,7 @@ class AttentionModel(nn.Module):
             self._make_heads(glimpse_val_fixed, num_steps),
             logit_key_fixed.contiguous()
         )
-        return AttentionModelFixed(embeddings, fixed_context, *fixed_attention_node_data)
+        return AttentionModelFixed(embeddings, fixed_context, *fixed_attention_node_data), graph_embed
 
     def _get_log_p_topk(self, fixed, state, k=None, normalize=True):
         log_p, _ = self._get_log_p(fixed, state, normalize=normalize)

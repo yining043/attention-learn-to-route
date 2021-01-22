@@ -188,8 +188,6 @@ class VRPDataset(Dataset):
             
             self.data = []
             
-            assert num_samples % 2 == 0
-            
             for i in range(num_samples):
                 if i < num_samples // 2:
                     self.data.append({
