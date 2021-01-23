@@ -144,7 +144,7 @@ class AttentionModel(nn.Module):
             batch_size, graph_size, embed_size = embeddings.size()
             
             mse_loss = torch.nn.MSELoss(reduction = 'mean') 
-            self_contra_loss = mse_loss(self.project_back(embeddings), input)
+            self_contra_loss = mse_loss(self.project_back(embeddings), self._init_embed(input))
             
             # self_contra_loss = torch.matmul(graph_embeddings[:batch_size // 2].view(batch_size // 2, 1, embed_size),
             #                                 graph_embeddings[batch_size // 2:].view(batch_size // 2, embed_size, 1)).mean()
