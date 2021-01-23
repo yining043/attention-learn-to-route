@@ -185,20 +185,16 @@ class VRPDataset(Dataset):
                 50: 40.,
                 100: 50.
             }
-            
-            self.data = []
-            
-            for i in range(num_samples):
 
-                self.data = [
-                    {
-                        'loc': torch.FloatTensor(size, 2).uniform_(0, 1),
-                        # Uniform 1 - 9, scaled by capacities
-                        'demand': (torch.FloatTensor(size).uniform_(0, 9).int() + 1).float() / CAPACITIES[size],
-                        'depot': torch.FloatTensor(2).uniform_(0, 1)
-                    }
-                    for i in range(num_samples)
-                ]
+            self.data = [
+                {
+                    'loc': torch.FloatTensor(size, 2).uniform_(0, 1),
+                    # Uniform 1 - 9, scaled by capacities
+                    'demand': (torch.FloatTensor(size).uniform_(0, 9).int() + 1).float() / CAPACITIES[size],
+                    'depot': torch.FloatTensor(2).uniform_(0, 1)
+                }
+                for i in range(num_samples)
+            ]
 
         self.size = len(self.data)
 
