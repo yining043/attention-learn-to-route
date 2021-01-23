@@ -117,7 +117,7 @@ class AttentionModel(nn.Module):
         # Note n_heads * val_dim == embedding_dim so input to project_out is embedding_dim
         self.project_out = nn.Linear(embedding_dim, embedding_dim, bias=False)
         
-        self.project_back = nn.Linear(embedding_dim, 3)
+        self.project_back = nn.Linear(embedding_dim, 2)
 
     def set_decode_type(self, decode_type, temp=None):
         self.decode_type = decode_type
@@ -145,12 +145,7 @@ class AttentionModel(nn.Module):
             
             mse_loss = torch.nn.MSELoss(reduction = 'mean') 
             input_3 = torch.cat(
-                (
-                    input['depot'][:, None, :],
-                    torch.cat((
-                        input['loc'],
-                        input['demand'][:, :, None]
-                    ), -1)), 1
+                (input['depot'][:, None, :], input['loc']), 1
             )
             
             
