@@ -116,6 +116,8 @@ class AttentionModel(nn.Module):
         assert embedding_dim % n_heads == 0
         # Note n_heads * val_dim == embedding_dim so input to project_out is embedding_dim
         self.project_out = nn.Linear(embedding_dim, embedding_dim, bias=False)
+        
+        self.project_back = nn.Linear(embedding_dim, 3)
 
     def set_decode_type(self, decode_type, temp=None):
         self.decode_type = decode_type
@@ -137,11 +139,15 @@ class AttentionModel(nn.Module):
             
         _log_p, pi, graph_embeddings = self._inner(input, embeddings)
         
-                ################### from yining
+        ################### from yining
         if self.training:
-            batch_size, embed_size = graph_embeddings.size()
-            self_contra_loss = torch.matmul(graph_embeddings[:batch_size // 2].view(batch_size // 2, 1, embed_size),
-                                            graph_embeddings[batch_size // 2:].view(batch_size // 2, embed_size, 1)).mean()
+            batch_size, graph_size, embed_size = embeddings.size()
+            
+            mse_loss = torch.nn.MSELoss(reduction = 'mean') 
+            self_contra_loss = mse_loss(self.project_back(embeddings), input)
+            
+            # self_contra_loss = torch.matmul(graph_embeddings[:batch_size // 2].view(batch_size // 2, 1, embed_size),
+            #                                 graph_embeddings[batch_size // 2:].view(batch_size // 2, embed_size, 1)).mean()
         else:
             self_contra_loss = None
         ###################
