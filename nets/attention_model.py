@@ -113,11 +113,10 @@ class AttentionModel(nn.Module):
         self.project_node_embeddings = nn.Linear(embedding_dim, 3 * embedding_dim, bias=False)
         self.project_fixed_context = nn.Linear(embedding_dim, embedding_dim, bias=False)
         self.project_step_context = nn.Linear(step_context_dim, embedding_dim, bias=False)
+        self.project_mask_decoder = nn.Linear(n_heads, 1, bias=False)
         assert embedding_dim % n_heads == 0
         # Note n_heads * val_dim == embedding_dim so input to project_out is embedding_dim
         self.project_out = nn.Linear(embedding_dim, embedding_dim, bias=False)
-        
-        self.project_back = nn.Linear(embedding_dim, 2)
 
     def set_decode_type(self, decode_type, temp=None):
         self.decode_type = decode_type
@@ -137,25 +136,7 @@ class AttentionModel(nn.Module):
         else:
             embeddings, _ = self.embedder(self._init_embed(input))
             
-        _log_p, pi, graph_embeddings = self._inner(input, embeddings)
-        
-        ################### from yining
-        if self.training:
-            batch_size, graph_size, embed_size = embeddings.size()
-            
-            mse_loss = torch.nn.MSELoss(reduction = 'mean') 
-            input_3 = torch.cat(
-                (input['depot'][:, None, :], input['loc']), 1
-            )
-            
-            
-            self_contra_loss = mse_loss(self.project_back(embeddings), input_3)
-            
-            # self_contra_loss = torch.matmul(graph_embeddings[:batch_size // 2].view(batch_size // 2, 1, embed_size),
-            #                                 graph_embeddings[batch_size // 2:].view(batch_size // 2, embed_size, 1)).mean()
-        else:
-            self_contra_loss = None
-        ###################
+        _log_p, pi, graph_embeddings, my_loss = self._inner(input, embeddings)
 
         cost, mask = self.problem.get_costs(input, pi)
         # Log likelyhood is calculated within the model since returning it per action does not work well with
@@ -164,7 +145,7 @@ class AttentionModel(nn.Module):
         if return_pi:
             return cost, ll, pi
 
-        return cost, ll, self_contra_loss
+        return cost, ll, my_loss
 
     def beam_search(self, *args, **kwargs):
         return self.problem.beam_search(*args, **kwargs, model=self)
@@ -253,6 +234,8 @@ class AttentionModel(nn.Module):
         fixed, graph_embeddings = self._precompute(embeddings)
 
         batch_size = state.ids.size(0)
+        
+        my_loss = []
 
         # Perform decoding steps
         i = 0
@@ -270,7 +253,8 @@ class AttentionModel(nn.Module):
                     state = state[unfinished]
                     fixed = fixed[unfinished]
 
-            log_p, mask = self._get_log_p(fixed, state)
+            log_p, mask, my_loss_ = self._get_log_p(fixed, state)
+            my_loss.append(my_loss_)
 
             # Select the indices of the next nodes in the sequences, result (batch_size) long
             selected = self._select_node(log_p.exp()[:, 0, :], mask[:, 0, :])  # Squeeze out steps dimension
@@ -293,7 +277,7 @@ class AttentionModel(nn.Module):
             i += 1
 
         # Collected lists, return Tensor
-        return torch.stack(outputs, 1), torch.stack(sequences, 1), graph_embeddings
+        return torch.stack(outputs, 1), torch.stack(sequences, 1), graph_embeddings, torch.stack(my_loss).mean()
 
     def sample_many(self, input, batch_rep=1, iter_rep=1):
         """
@@ -351,7 +335,7 @@ class AttentionModel(nn.Module):
         return AttentionModelFixed(embeddings, fixed_context, *fixed_attention_node_data), graph_embed
 
     def _get_log_p_topk(self, fixed, state, k=None, normalize=True):
-        log_p, _ = self._get_log_p(fixed, state, normalize=normalize)
+        log_p, _, _ = self._get_log_p(fixed, state, normalize=normalize)
 
         # Return topk
         if k is not None and k < log_p.size(-1):
@@ -376,14 +360,14 @@ class AttentionModel(nn.Module):
         mask = state.get_mask()
 
         # Compute logits (unnormalized log_p)
-        log_p, glimpse = self._one_to_many_logits(query, glimpse_K, glimpse_V, logit_K, mask)
+        log_p, glimpse, my_loss = self._one_to_many_logits(query, glimpse_K, glimpse_V, logit_K, mask)
 
         if normalize:
             log_p = torch.log_softmax(log_p / self.temp, dim=-1)
 
         assert not torch.isnan(log_p).any()
 
-        return log_p, mask
+        return log_p, mask, my_loss
 
     def _get_parallel_step_context(self, embeddings, state, from_depot=False):
         """
@@ -481,7 +465,10 @@ class AttentionModel(nn.Module):
         compatibility = torch.matmul(glimpse_Q, glimpse_K.transpose(-2, -1)) / math.sqrt(glimpse_Q.size(-1))
         if self.mask_inner:
             assert self.mask_logits, "Cannot mask inner without masking logits"
-            compatibility[mask[None, :, :, None, :].expand_as(compatibility)] = -math.inf
+            WHERE_to_mask_base = mask[None, :, :, None, :]
+            compatibility[WHERE_to_mask_base.expand_as(compatibility)] = -math.inf
+            criteria = torch.nn.BCELoss()
+            my_loss = criteria(self.project_mask_decoder(torch.sigmoid(compatibility).permute(1, 2, 3, 4, 0)).squeeze(-1), 1 - WHERE_to_mask_base[0].float())
 
         # Batch matrix multiplication to compute heads (n_heads, batch_size, num_steps, val_size)
         heads = torch.matmul(torch.softmax(compatibility, dim=-1), glimpse_V)
@@ -503,7 +490,7 @@ class AttentionModel(nn.Module):
         if self.mask_logits:
             logits[mask] = -math.inf
 
-        return logits, glimpse.squeeze(-2)
+        return logits, glimpse.squeeze(-2), my_loss
 
     def _get_attention_node_data(self, fixed, state):
 
