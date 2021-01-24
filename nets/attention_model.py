@@ -468,7 +468,7 @@ class AttentionModel(nn.Module):
             WHERE_to_mask_base = mask[None, :, :, None, :]
             compatibility[WHERE_to_mask_base.expand_as(compatibility)] = -math.inf
             criteria = torch.nn.BCELoss()
-            my_loss = criteria(self.project_mask_decoder(torch.sigmoid(compatibility).permute(1, 2, 3, 4, 0)).squeeze(-1), 1 - WHERE_to_mask_base[0].float())
+            my_loss = criteria(torch.sigmoid(self.project_mask_decoder(compatibility).permute(1, 2, 3, 4, 0)).squeeze(-1), 1 - WHERE_to_mask_base[0].float())
 
         # Batch matrix multiplication to compute heads (n_heads, batch_size, num_steps, val_size)
         heads = torch.matmul(torch.softmax(compatibility, dim=-1), glimpse_V)
