@@ -462,13 +462,15 @@ class AttentionModel(nn.Module):
         glimpse_Q = query.view(batch_size, num_steps, self.n_heads, 1, key_size).permute(2, 0, 1, 3, 4)
 
         # Batch matrix multiplication to compute compatibilities (n_heads, batch_size, num_steps, graph_size)
-        compatibility = torch.matmul(glimpse_Q, glimpse_K.transpose(-2, -1)) / math.sqrt(glimpse_Q.size(-1))
+        compatibility_ = torch.matmul(glimpse_Q, glimpse_K.transpose(-2, -1)) / math.sqrt(glimpse_Q.size(-1))
         if self.mask_inner:
             assert self.mask_logits, "Cannot mask inner without masking logits"
             WHERE_to_mask_base = mask[None, :, :, None, :]
-            compatibility[WHERE_to_mask_base.expand_as(compatibility)] = -math.inf
             criteria = torch.nn.BCELoss()
-            my_loss = criteria(torch.sigmoid(self.project_mask_decoder(compatibility.permute(1, 2, 3, 4, 0))).squeeze(-1), 1 - WHERE_to_mask_base[0].float())
+            my_loss = criteria(torch.sigmoid(self.project_mask_decoder(compatibility_.permute(1, 2, 3, 4, 0))).squeeze(-1), 1 - WHERE_to_mask_base[0].bool().float())
+            
+            compatibility = compatibility_.clone()
+            compatibility[WHERE_to_mask_base.expand_as(compatibility)] = -math.inf
 
         # Batch matrix multiplication to compute heads (n_heads, batch_size, num_steps, val_size)
         heads = torch.matmul(torch.softmax(compatibility, dim=-1), glimpse_V)
